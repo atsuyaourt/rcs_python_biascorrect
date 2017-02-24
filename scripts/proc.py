@@ -1,28 +1,12 @@
 import os
+import json
+
 import numpy as np
 import pandas as pd
 import xarray as xr
 
 from rpy2.robjects import pandas2ri
 from rpy2.robjects.packages import SignatureTranslatedAnonymousPackage
-
-lon_bnds = [122.625, 123.625]
-lat_bnds = [13.375, 14.125]
-variables = [{
-    'name': 'pr',
-    'mult': 10800
-}, {
-    'name': 'tas',
-    'add': -273.15
-}]
-gcms = ['CanESM2', 'CSIRO', 'GFDL', 'HadGEM2']
-experiments = [{
-    'name': 'hist',
-    'time_bnds': ['1971-01-01', '2000-12-31']
-}, {
-    'name': 'proj',
-    'time_bnds': ['2011-01-01', '2065-12-31']
-}]
 
 
 def load_r_script_func(file_name):
@@ -76,9 +60,9 @@ def xr_to_df(filename, var, lon_bnds, lat_bnds, time_bnds):
         var_name = var
 
     dat = ds[var_name].sel(
-            lat=slice(*lat_bnds),
-            lon=slice(*lon_bnds),
-            time=slice(*time_bnds)
+        lat=slice(*lat_bnds),
+        lon=slice(*lon_bnds),
+        time=slice(*time_bnds)
     )
 
     if isinstance(var, dict):
@@ -146,8 +130,10 @@ def df_to_nc(df, out_file):
 pandas2ri.activate()
 bias_correct = load_r_script_func('scripts/bias_correct.R')
 
+with open('settings.json') as json_data:
+    conf = json.load(json_data)
 
-for var in variables:
+for var in conf['variables']:
     # Load APHRODITE data as pandas DataFrame
     obs_file = get_aphro_input(var['name'])
     print 'Reading %s...' % obs_file
@@ -155,7 +141,7 @@ for var in variables:
     aphro_var = get_aphro_varname(var['name'])
     obs_df = (
         xr_to_df(obs_file, aphro_var,
-                 lon_bnds, lat_bnds, obs_time_bnds)
+                 conf['lon_bnds'], conf['lat_bnds'], obs_time_bnds)
         .drop(['lev'], axis=1)
     )
 
@@ -166,17 +152,22 @@ for var in variables:
     df_to_nc(out_df, out_file)
     print 'Writing %s done!!!' % out_file
 
-    for gcm in gcms:
+    for gcm in conf['gcms']:
         fit_func = pd.DataFrame()
-        for exp in experiments:
+        for exp in conf['experiments']:
             # Load data as pandas DataFrame
             mod_file = get_mod_input(var['name'], exp['name'], gcm)
             print 'Reading %s...' % mod_file
-            mod_df = xr_to_df(mod_file, var,
-                              lon_bnds, lat_bnds, exp['time_bnds'])
+            mod_df = xr_to_df(
+                mod_file, var,
+                conf['lon_bnds'], conf['lat_bnds'], exp['time_bnds']
+            )
 
             if gcm == 'HadGEM2':
-                mod_df = mod_df.groupby(['lon', 'lat', 'time']).mean().reset_index()
+                mod_df = (
+                    mod_df.groupby(['lon', 'lat', 'time'])
+                    .mean().reset_index()
+                )
 
             # Save as netcdf
             out_df = mod_df.set_index(['time', 'lat', 'lon'])[var['name']]
@@ -187,7 +178,11 @@ for var in variables:
             # Fit quantile maps
             if exp['name'] == 'hist':
                 print 'Fitting quantile map'
-                df = obs_df.merge(mod_df, how='right', on=['lon', 'lat', 'time'])
+                df = obs_df.merge(
+                    mod_df,
+                    how='right',
+                    on=['lon', 'lat', 'time']
+                )
                 df.rename(columns={
                     'tave': 'obs', 'tas': 'mod',
                     'precip': 'obs', 'pr': 'mod'

@@ -1,0 +1,23 @@
+{
+    "lon_bnds": [122.625, 123.625],
+    "lat_bnds": [13.375, 14.125],
+    "variables":[
+        {
+            "name": "pr",
+            "mult": 10800
+        }, {
+            "name": "tas",
+            "add": -273.15
+        }
+    ],
+    "gcms": ["CanESM2", "CSIRO", "GFDL", "HadGEM2"],
+    "experiments": [
+        {
+            "name": "hist",
+            "time_bnds": ["1971-01-01", "2000-12-31"]
+        }, {
+            "name": "proj",
+            "time_bnds": ["2011-01-01", "2065-12-31"]
+        }
+    ]
+}
